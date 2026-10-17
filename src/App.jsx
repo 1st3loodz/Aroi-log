@@ -10,6 +10,7 @@ import EntryDetail from './components/RestaurantDetail';
 import EntryForm from './components/RestaurantForm';
 import DataActions from './components/DataActions';
 import MapView from './components/MapView';
+import ConfirmModal from './components/ConfirmModal';
 
 // Page-level view modes
 const PAGE_VIEWS = [
@@ -39,6 +40,7 @@ export default function App() {
   const [detailId,      setDetailId]      = useState(null);
   const [editEntry,     setEditEntry]     = useState(null);
   const [showForm,      setShowForm]      = useState(false);
+  const [entryToDelete, setEntryToDelete] = useState(null);
 
   // Filtered + sorted list
   const filtered = useMemo(
@@ -60,7 +62,20 @@ export default function App() {
     });
   };
 
-  const handleDelete = (id) => { setEntries((prev) => prev.filter((r) => r.id !== id)); setDetailId(null); };
+  const handleDeleteRequest = (entryOrId) => {
+    const target = typeof entryOrId === 'object' && entryOrId !== null
+      ? entryOrId
+      : entries.find((r) => r.id === entryOrId);
+    setEntryToDelete(target || { id: entryOrId, name: '' });
+  };
+
+  const handleConfirmDelete = () => {
+    if (!entryToDelete) return;
+    const idToDelete = entryToDelete.id;
+    setEntries((prev) => prev.filter((r) => r.id !== idToDelete));
+    if (detailId === idToDelete) setDetailId(null);
+    setEntryToDelete(null);
+  };
   const openNew  = (type) => { setEditEntry(null); setShowForm(true); };
   const openEdit = (r)    => { setEditEntry(r);    setShowForm(true); };
 
@@ -231,7 +246,7 @@ export default function App() {
                     <EntryCard key={r.id} entry={r}
                       onClick={() => setDetailId(r.id)}
                       onEdit={() => openEdit(r)}
-                      onDelete={() => handleDelete(r.id)}
+                      onDelete={() => handleDeleteRequest(r)}
                     />
                   ))}
                 </div>
@@ -241,7 +256,7 @@ export default function App() {
                     <EntryRow key={r.id} entry={r}
                       onClick={() => setDetailId(r.id)}
                       onEdit={() => openEdit(r)}
-                      onDelete={() => handleDelete(r.id)}
+                      onDelete={() => handleDeleteRequest(r)}
                     />
                   ))}
                 </div>
@@ -313,9 +328,21 @@ export default function App() {
             entry={detailEntry}
             onClose={() => setDetailId(null)}
             onEdit={() => { setEditEntry(detailEntry); setDetailId(null); setShowForm(true); }}
-            onDelete={() => handleDelete(detailId)}
+            onDelete={() => handleDeleteRequest(detailEntry)}
           />
         )}
+
+        {/* Delete confirmation modal */}
+        <ConfirmModal
+          isOpen={Boolean(entryToDelete)}
+          title="ยืนยันการลบรายการ"
+          message="คุณแน่ใจหรือไม่ว่าต้องการลบรายการนี้? การกระทำนี้ไม่สามารถย้อนกลับได้"
+          itemName={entryToDelete?.name}
+          confirmLabel="ยืนยันลบ"
+          cancelLabel="ยกเลิก"
+          onConfirm={handleConfirmDelete}
+          onCancel={() => setEntryToDelete(null)}
+        />
       </div>
     </div>
   );
