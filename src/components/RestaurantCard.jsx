@@ -1,5 +1,5 @@
-import { Star, MapPin, Calendar, Heart, Pencil, Trash2, ExternalLink } from 'lucide-react';
-import { formatDate, getMapsUrl, isPackaged, getDishes, dishesTotal, formatMoney, currencyOf } from '../utils/helpers';
+import { Star, MapPin, Calendar, Heart, Pencil, Trash2, ExternalLink, Images } from 'lucide-react';
+import { formatDate, getMapsUrl, isPackaged, getDishes, dishesTotal, formatMoney, currencyOf, getImages } from '../utils/helpers';
 import { BeerGlassRating, BeerColorBadge } from './BeerGlass';
 import { hasAmenities, activeAmenities } from '../data/amenities';
 import { isBeer } from '../data/beer';
@@ -42,7 +42,10 @@ export function MapsButton({ entry, compact = false }) {
 // ── Card (grid) ───────────────────────────────────────────────────────────────
 export function EntryCard({ entry, onClick, onEdit, onDelete }) {
   const { name, type, subCategory, location, visitDate, priceTier,
-          overall, taste, value, atmosphere, wantToReturn, imageUrl, highlightMenus, mustTryDishes } = entry;
+          overall, taste, value, atmosphere, wantToReturn } = entry;
+  const images = getImages(entry);
+  const coverImage = images[0] || '';
+  const extraPhotos = Math.max(0, images.length - 1);
   const menus = [...getDishes(entry)].sort((a, b) => (b.mustTry ? 1 : 0) - (a.mustTry ? 1 : 0));
   const cardTotal = dishesTotal(getDishes(entry));
   const th    = TYPE_THEME[type] || TYPE_THEME.food;
@@ -55,14 +58,26 @@ export function EntryCard({ entry, onClick, onEdit, onDelete }) {
     >
       {/* Image / hero */}
       <div className={`relative h-44 ${th.bg} dark:from-gray-800 dark:to-gray-900`}>
-        {imageUrl ? (
-          <img src={imageUrl} alt={name} className="w-full h-full object-cover" loading="lazy" />
+        {coverImage ? (
+          <img src={coverImage} alt={name} className="w-full h-full object-cover" loading="lazy" />
         ) : (
           <div className="flex items-center justify-center h-full text-5xl opacity-30">
             {typeInfo?.emoji || '🍽️'}
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/10 to-transparent" />
+
+        {/* Type badge + multi-photo count badge – top left */}
+        <div className="absolute top-2 left-2 flex items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-black/40 backdrop-blur-sm text-white text-xs font-semibold rounded-lg">
+            {typeInfo?.emoji} {subCategory}
+          </span>
+          {extraPhotos > 0 && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-black/55 backdrop-blur-sm text-white text-xs font-bold rounded-lg">
+              <Images className="w-3 h-3" /> +{extraPhotos}
+            </span>
+          )}
+        </div>
 
         {/* Hover actions */}
         <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -90,13 +105,6 @@ export function EntryCard({ entry, onClick, onEdit, onDelete }) {
               {wantToReturn && <Heart className="w-4 h-4 text-rose-400 fill-rose-400" />}
             </div>
           </div>
-        </div>
-
-        {/* Type badge – top left */}
-        <div className="absolute top-2 left-2">
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-black/40 backdrop-blur-sm text-white text-xs font-semibold rounded-lg">
-            {typeInfo?.emoji} {subCategory}
-          </span>
         </div>
       </div>
 
@@ -180,7 +188,10 @@ export function EntryCard({ entry, onClick, onEdit, onDelete }) {
 
 // ── Row (list) ────────────────────────────────────────────────────────────────
 export function EntryRow({ entry, onClick, onEdit, onDelete }) {
-  const { name, type, subCategory, location, visitDate, priceTier, overall, wantToReturn, imageUrl } = entry;
+  const { name, type, subCategory, location, visitDate, priceTier, overall, wantToReturn } = entry;
+  const images     = getImages(entry);
+  const coverImage = images[0] || '';
+  const extraPhotos = Math.max(0, images.length - 1);
   const th       = TYPE_THEME[type] || TYPE_THEME.food;
   const typeInfo = ENTRY_TYPES.find((x) => x.id === type);
 
@@ -190,11 +201,16 @@ export function EntryRow({ entry, onClick, onEdit, onDelete }) {
       onClick={onClick}
     >
       {/* Thumbnail */}
-      <div className={`w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 ${th.bg}`}>
-        {imageUrl
-          ? <img src={imageUrl} alt={name} className="w-full h-full object-cover" loading="lazy" />
+      <div className={`relative w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 ${th.bg}`}>
+        {coverImage
+          ? <img src={coverImage} alt={name} className="w-full h-full object-cover" loading="lazy" />
           : <div className="flex items-center justify-center h-full text-2xl opacity-40">{typeInfo?.emoji}</div>
         }
+        {extraPhotos > 0 && (
+          <span className="absolute bottom-1 right-1 px-1 py-0.2 bg-black/65 text-white text-[10px] font-bold rounded">
+            +{extraPhotos}
+          </span>
+        )}
       </div>
 
       {/* Content */}

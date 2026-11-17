@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  X, ImageIcon, ToggleLeft, ToggleRight, ChevronDown, MapPin, ExternalLink, Camera, ImagePlus,
+  X, ImageIcon, ToggleLeft, ToggleRight, ChevronDown, MapPin, ExternalLink, Camera, ImagePlus, Plus, Loader2,
 } from 'lucide-react';
 import StarPicker from './StarPicker';
 import DishList from './DishList';
@@ -10,7 +10,7 @@ import { ENTRY_TYPES, SUB_CATEGORIES, HIGHLIGHT_PLACEHOLDER, TYPE_THEME } from '
 
 // Price level 1–4 is shown with the chosen currency symbol (฿ for local, $ ¥ € £ ₩ for abroad)
 const CURRENCY_SYMBOLS = ['฿', '$', '¥', '€', '£', '₩'];
-import { calcOverall, generateId, getMapsUrl, getDishes, fileToDataUrl, todayISO } from '../utils/helpers';
+import { calcOverall, generateId, getMapsUrl, getDishes, getImages, fileToDataUrl, todayISO } from '../utils/helpers';
 import DateInputDMY from './DateInputDMY';
 import { AMENITIES, hasAmenities } from '../data/amenities';
 
@@ -28,6 +28,7 @@ const EMPTY_FORM = {
   dishes: [],
   wantToReturn: true,
   notes: '',
+  images: [],
   imageUrl: '',
   mapsUrl: '',
   beerStyle: '',
@@ -45,31 +46,73 @@ export default function EntryForm({ entry, defaultType, onSave, onClose }) {
     if (entry) {
       const sym = Array.from(entry.priceTier || '')[0];
       const legacyCurrency = sym === '$' ? 'USD' : sym === '¥' ? 'JPY' : 'THB';
-      return { source: 'shop', abv: '', ibu: '', srm: 6, aroma: 3, bitterness: 3, beerStyle: '', amenities: {}, currency: legacyCurrency, ...entry, dishes: getDishes(entry).map((d) => ({ id: generateId(), ...d })) };
+      const initialImages = getImages(entry);
+      return {
+        source: 'shop', abv: '', ibu: '', srm: 6, aroma: 3, bitterness: 3, beerStyle: '', amenities: {},
+        currency: legacyCurrency, ...entry,
+        images: initialImages,
+        imageUrl: initialImages[0] || '',
+        dishes: getDishes(entry).map((d) => ({ id: generateId(), ...d })),
+      };
     }
     return { ...EMPTY_FORM, type: defaultType || 'food', subCategory: SUB_CATEGORIES[defaultType || 'food'][0] };
   });
-  const [imgError, setImgError] = useState(false);
-  const [errors, setErrors]     = useState({});
+  const [urlInput, setUrlInput]   = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [errors, setErrors]       = useState({});
   const overlayRef = useRef(null);
   const cameraRef  = useRef(null);
   const galleryRef = useRef(null);
   const [photoError, setPhotoError] = useState('');
-  const isUploaded = (form.imageUrl || '').startsWith('data:');
 
   const handlePhoto = async (e) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
-    if (!file) return;
-    try {
-      setPhotoError('');
-      setImgError(false);
-      setForm((f) => ({ ...f, imageUrl: '' }));
-      const dataUrl = await fileToDataUrl(file);
-      setForm((f) => ({ ...f, imageUrl: dataUrl }));
-    } catch {
-      setPhotoError('อัปโหลดรูปไม่สำเร็จ ลองใหม่อีกครั้ง');
+    if (files.length === 0) return;
+    setUploading(true);
+    setPhotoError('');
+    const results = [];
+    let failed = 0;
+    for (const file of files) {
+      try {
+        const dataUrl = await fileToDataUrl(file, 1000, 0.7);
+        results.push(dataUrl);
+      } catch {
+        failed += 1;
+      }
     }
+    if (results.length > 0) {
+      setForm((f) => {
+        const nextImages = [...(f.images || []), ...results];
+        return { ...f, images: nextImages, imageUrl: nextImages[0] || '' };
+      });
+    }
+    if (failed > 0) {
+      setPhotoError(
+        results.length > 0
+          ? `อัปโหลดสำเร็จ ${results.length} รูป (ข้าม ${failed} รูปที่ไม่รองรับ)`
+          : 'ไม่สามารถอ่านไฟล์รูปภาพได้ กรุณาลองเลือกรูป JPG หรือ PNG'
+      );
+    }
+    setUploading(false);
+  };
+
+  const handleAddUrl = () => {
+    const trimmed = urlInput.trim();
+    if (!trimmed) return;
+    setForm((f) => {
+      const nextImages = [...(f.images || []), trimmed];
+      return { ...f, images: nextImages, imageUrl: nextImages[0] || '' };
+    });
+    setUrlInput('');
+    setPhotoError('');
+  };
+
+  const handleRemoveImage = (index) => {
+    setForm((f) => {
+      const nextImages = (f.images || []).filter((_, i) => i !== index);
+      return { ...f, images: nextImages, imageUrl: nextImages[0] || '' };
+    });
   };
 
   const packaged = form.source === 'packaged';
@@ -104,6 +147,10 @@ export default function EntryForm({ entry, defaultType, onSave, onClose }) {
     const errs = validate();
     if (Object.keys(errs).length > 0) { setErrors(errs); return; }
     const data = { ...form, overall, id: form.id || generateId() };
+    const cleanImages = (form.images || []).filter((u) => typeof u === 'string' && u.trim());
+    if (urlInput.trim()) cleanImages.push(urlInput.trim());
+    data.images = cleanImages;
+    data.imageUrl = cleanImages[0] || '';
     data.dishes = (form.dishes || [])
       .filter((d) => d.name.trim() || d.price !== '')
       .map((d) => ({ ...d, name: d.name.trim() || 'Dish' }));
@@ -194,46 +241,80 @@ export default function EntryForm({ entry, defaultType, onSave, onClose }) {
             </div>
           </div>
 
-          {/* ── Image: camera / gallery upload or URL ── */}
-          <div className="space-y-2">
-            <label className="label">📸 รูปภาพ (Photo)</label>
+          {/* ── Image: multi-photo camera / gallery upload or URL ── */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="label mb-0">📸 รูปภาพ ({(form.images || []).length} รูป)</label>
+              {(form.images || []).length > 0 && (
+                <span className="text-[11px] text-gray-400">รูปแรกจะเป็นรูปปก</span>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => cameraRef.current?.click()}
-                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300 hover:border-amber-300 active:scale-95 transition">
-                <Camera className="w-4 h-4" /> ถ่ายรูป
+              <button type="button" disabled={uploading} onClick={() => cameraRef.current?.click()}
+                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300 hover:border-amber-400 active:scale-95 transition disabled:opacity-50">
+                <Camera className="w-4 h-4 text-amber-500" /> ถ่ายรูปเพิ่ม
               </button>
-              <button type="button" onClick={() => galleryRef.current?.click()}
-                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300 hover:border-amber-300 active:scale-95 transition">
-                <ImagePlus className="w-4 h-4" /> เลือกจากอัลบั้ม
+              <button type="button" disabled={uploading} onClick={() => galleryRef.current?.click()}
+                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300 hover:border-amber-400 active:scale-95 transition disabled:opacity-50">
+                {uploading ? <Loader2 className="w-4 h-4 animate-spin text-amber-500" /> : <ImagePlus className="w-4 h-4 text-amber-500" />}
+                {(form.images || []).length > 0 ? 'เพิ่มรูปจากอัลบั้ม' : 'เลือกจากอัลบั้ม (หลายรูป)'}
               </button>
             </div>
             <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhoto} />
-            <input ref={galleryRef} type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
+            <input ref={galleryRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhoto} />
 
-            {isUploaded ? (
-              <p className="text-xs text-green-600 dark:text-green-400">✅ อัปโหลดรูปจากเครื่องแล้ว</p>
-            ) : (
-              <input className="input" placeholder="หรือวางลิงก์รูป https://..."
-                value={form.imageUrl}
-                onChange={(e) => { set('imageUrl', e.target.value); setImgError(false); }}
+            {/* URL input to append image link */}
+            <div className="flex gap-2">
+              <input
+                className="input flex-1"
+                placeholder="หรือวางลิงก์รูป https://... แล้วกด +"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddUrl(); } }}
               />
+              <button
+                type="button"
+                onClick={handleAddUrl}
+                disabled={!urlInput.trim()}
+                className="px-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-amber-400 disabled:opacity-40 transition"
+                title="เพิ่มลิงก์รูป"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+
+            {uploading && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> กำลังย่อขนาดและบีบอัดรูปภาพอัตโนมัติ...
+              </p>
             )}
             {photoError && <p className="text-rose-500 text-xs">{photoError}</p>}
 
-            {form.imageUrl && !imgError && (
-              <div className="relative rounded-xl overflow-hidden h-36 bg-gray-100 dark:bg-gray-800">
-                <img src={form.imageUrl} alt="preview" className="w-full h-full object-cover"
-                  onError={() => setImgError(true)} />
-                <button type="button" onClick={() => { set('imageUrl', ''); setImgError(false); }}
-                  className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 text-white hover:bg-black/80 transition"
-                  aria-label="Remove photo">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-            {imgError && (
-              <div className="flex items-center justify-center h-16 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-400 text-sm gap-2">
-                <ImageIcon className="w-4 h-4" /> ไม่สามารถโหลดรูปได้
+            {/* Horizontal scrollable thumbnail strip */}
+            {(form.images || []).length > 0 && (
+              <div className="flex gap-2.5 overflow-x-auto pb-1 pt-0.5">
+                {(form.images || []).map((imgSrc, idx) => (
+                  <div
+                    key={`${idx}-${imgSrc.slice(0, 24)}`}
+                    className="relative w-24 h-24 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-800 flex-shrink-0 border border-gray-200 dark:border-gray-700"
+                  >
+                    <img src={imgSrc} alt={`photo-${idx + 1}`} className="w-full h-full object-cover" />
+                    {idx === 0 && (
+                      <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/65 text-white text-[10px] font-semibold">
+                        ปก
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveImage(idx)}
+                      className="absolute top-1 right-1 p-1 rounded-full bg-black/65 text-white hover:bg-rose-600 transition"
+                      aria-label={`Remove photo ${idx + 1}`}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>

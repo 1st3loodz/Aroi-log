@@ -1,12 +1,12 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import {
-  X, MapPin, Calendar, Star, Heart, Pencil, Trash2, ExternalLink, ChefHat, StickyNote,
+  X, MapPin, Calendar, Star, Heart, Pencil, Trash2, ExternalLink, ChefHat, StickyNote, ChevronLeft, ChevronRight, Images,
 } from 'lucide-react';
 import StarDisplay from './StarDisplay';
 import { PintGlass, BeerGlassRating, BeerColorBadge } from './BeerGlass';
 import { isBeer, getSrm } from '../data/beer';
 import { hasAmenities, activeAmenities } from '../data/amenities';
-import { formatDate, getMapsUrl, scoreBarColor, isPackaged, getDishes, dishesTotal, formatMoney, currencyOf } from '../utils/helpers';
+import { formatDate, getMapsUrl, scoreBarColor, isPackaged, getDishes, dishesTotal, formatMoney, currencyOf, getImages } from '../utils/helpers';
 import { ENTRY_TYPES, TYPE_THEME } from '../data/mockData';
 
 const ScoreBar = ({ label, emoji, score }) => (
@@ -33,8 +33,32 @@ export default function EntryDetail({ entry, onClose, onEdit, onDelete }) {
   const {
     name, type, subCategory, location, visitDate, priceTier,
     overall, taste, value, atmosphere,
-    wantToReturn, imageUrl, highlightMenus, mustTryDishes, notes,
+    wantToReturn, notes,
   } = entry;
+  const images    = getImages(entry);
+  const [photoIdx, setPhotoIdx] = useState(0);
+  const touchStartX = useRef(null);
+  const activeImg = images[photoIdx] || images[0] || '';
+  const prevPhoto = (e) => {
+    e?.stopPropagation();
+    setPhotoIdx((i) => (i - 1 + images.length) % images.length);
+  };
+  const nextPhoto = (e) => {
+    e?.stopPropagation();
+    setPhotoIdx((i) => (i + 1) % images.length);
+  };
+  const onTouchStart = (e) => {
+    touchStartX.current = e.touches?.[0]?.clientX ?? null;
+  };
+  const onTouchEnd = (e) => {
+    if (touchStartX.current == null || images.length <= 1) return;
+    const dx = (e.changedTouches?.[0]?.clientX ?? touchStartX.current) - touchStartX.current;
+    touchStartX.current = null;
+    if (Math.abs(dx) > 40) {
+      if (dx < 0) nextPhoto();
+      else prevPhoto();
+    }
+  };
   const dishes    = getDishes(entry);
   const dishTotal = dishesTotal(dishes);
   const cur       = currencyOf(entry);
@@ -54,13 +78,46 @@ export default function EntryDetail({ entry, onClose, onEdit, onDelete }) {
     >
       <div className="w-full sm:max-w-lg max-h-[95dvh] sm:max-h-[90vh] bg-white dark:bg-gray-900 rounded-t-3xl sm:rounded-2xl flex flex-col shadow-2xl animate-slide-up overflow-hidden">
 
-        {/* Hero */}
-        <div className={`relative h-52 sm:h-56 ${th.bg} flex-shrink-0`}>
-          {imageUrl
-            ? <img src={imageUrl} alt={name} className="w-full h-full object-cover" />
+        {/* Hero / Carousel */}
+        <div
+          className={`relative h-56 sm:h-60 ${th.bg} flex-shrink-0 select-none`}
+          onTouchStart={onTouchStart}
+          onTouchEnd={onTouchEnd}
+        >
+          {activeImg
+            ? <img src={activeImg} alt={`${name} (${photoIdx + 1}/${images.length})`} className="w-full h-full object-cover" />
             : <div className="flex items-center justify-center h-full text-8xl opacity-20">{typeInfo?.emoji}</div>
           }
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/15 to-transparent pointer-events-none" />
+
+          {/* Photo counter badge – top left */}
+          {images.length > 1 && (
+            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-black/55 backdrop-blur-sm text-white text-xs font-semibold flex items-center gap-1">
+              <Images className="w-3.5 h-3.5" /> {photoIdx + 1} / {images.length}
+            </div>
+          )}
+
+          {/* Prev / Next arrows for multiple photos */}
+          {images.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={prevPhoto}
+                aria-label="Previous photo"
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-black/50 text-white hover:bg-black/75 active:scale-90 transition"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                onClick={nextPhoto}
+                aria-label="Next photo"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-black/50 text-white hover:bg-black/75 active:scale-90 transition"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </>
+          )}
 
           {/* Actions */}
           <div className="absolute top-3 right-3 flex gap-2">
@@ -105,6 +162,26 @@ export default function EntryDetail({ entry, onClose, onEdit, onDelete }) {
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+          {/* Thumbnail strip when entry has multiple photos */}
+          {images.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {images.map((imgSrc, idx) => (
+                <button
+                  key={`${idx}-${imgSrc.slice(0, 20)}`}
+                  type="button"
+                  onClick={() => setPhotoIdx(idx)}
+                  className={`relative w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border-2 transition-all ${
+                    idx === photoIdx
+                      ? 'border-amber-500 scale-[1.03] shadow-sm'
+                      : 'border-transparent opacity-65 hover:opacity-100'
+                  }`}
+                >
+                  <img src={imgSrc} alt={`thumb-${idx + 1}`} className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Google Maps CTA (shop only) */}
           {!packaged && <a

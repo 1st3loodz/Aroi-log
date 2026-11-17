@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { MapPin, ExternalLink, Star, Heart, X } from 'lucide-react';
-import { getMapsUrl } from '../utils/helpers';
+import { getMapsUrl, getCoverImage } from '../utils/helpers';
 import { BANGKOK_CENTER, ENTRY_TYPES, TYPE_THEME } from '../data/mockData';
 
 function scoreToColor(score) {
@@ -12,12 +12,13 @@ function scoreToColor(score) {
 
 function buildPopupHTML(r) {
   const mapsUrl  = getMapsUrl(r);
+  const cover    = getCoverImage(r);
   const typeInfo = ENTRY_TYPES.find((x) => x.id === r.type);
   const heart    = r.wantToReturn ? '❤️ ' : '';
   return `
     <div style="font-family:Inter,'Noto Sans Thai',sans-serif;min-width:180px;max-width:240px">
-      ${r.imageUrl
-        ? `<img src="${r.imageUrl}" alt="${r.name}"
+      ${cover
+        ? `<img src="${cover}" alt="${r.name}"
              style="width:calc(100% + 16px);margin:-8px -8px 8px -8px;height:90px;object-fit:cover;border-radius:8px 8px 0 0"
              onerror="this.style.display='none'">`
         : ''}
@@ -119,8 +120,8 @@ export default function MapView({ entries, onSelectEntry }) {
         {activeEntry && (
           <div className="absolute bottom-3 left-3 right-3 z-[500] animate-slide-up">
             <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-800 p-3 flex items-center gap-3">
-              {activeEntry.imageUrl && (
-                <img src={activeEntry.imageUrl} alt={activeEntry.name}
+              {getCoverImage(activeEntry) && (
+                <img src={getCoverImage(activeEntry)} alt={activeEntry.name}
                   className="w-14 h-14 rounded-xl object-cover flex-shrink-0" />
               )}
               <div className="flex-1 min-w-0">

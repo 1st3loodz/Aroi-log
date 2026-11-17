@@ -168,24 +168,79 @@ export function currencyOf(entry) {
   return Array.from(entry.priceTier || '')[0] || '฿';
 }
 
-/** Read a photo (camera/gallery), downscale and return a JPEG base64 data URL */
-export function fileToDataUrl(file, maxSize = 1024, quality = 0.8) {
+/** Return all images for an entry, supporting `images[]` and legacy `imageUrl` / `image` */
+export function getImages(entry) {
+  if (!entry) return [];
+  const list = [];
+  if (Array.isArray(entry.images)) {
+    entry.images.forEach((u) => {
+      if (typeof u === 'string' && u.trim()) list.push(u.trim());
+    });
+  }
+  const legacy = entry.imageUrl || entry.image;
+  if (typeof legacy === 'string' && legacy.trim() && !list.includes(legacy.trim())) {
+    list.push(legacy.trim());
+  }
+  return list;
+}
+
+/** Return the first/cover image for an entry, or '' if none */
+export function getCoverImage(entry) {
+  return getImages(entry)[0] || '';
+}
+
+/** Read a photo (camera/gallery), downscale to max 1000px and return a JPEG base64 data URL (quality 0.7) */
+export function fileToDataUrl(file, maxSize = 1000, quality = 0.7) {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error('Invalid image'));
-      img.onload = () => {
-        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+    const drawToJpeg = (source, w, h) => {
+      try {
+        if (!w || !h) return reject(new Error('Invalid image dimensions'));
+        const scale = Math.min(1, maxSize / Math.max(w, h));
         const canvas = document.createElement('canvas');
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.width = Math.max(1, Math.round(w * scale));
+        canvas.height = Math.max(1, Math.round(h * scale));
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
         resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.src = reader.result;
+      } catch (err) {
+        reject(err);
+      }
     };
-    reader.readAsDataURL(file);
+
+    const loadViaObjectUrl = () => {
+      const objectUrl = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        drawToJpeg(img, img.naturalWidth || img.width, img.naturalHeight || img.height);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        // Final fallback via FileReader
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.onload = () => {
+          const img2 = new Image();
+          img2.onerror = () => reject(new Error('Invalid image'));
+          img2.onload = () => drawToJpeg(img2, img2.naturalWidth || img2.width, img2.naturalHeight || img2.height);
+          img2.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      };
+      img.src = objectUrl;
+    };
+
+    if (typeof createImageBitmap === 'function') {
+      createImageBitmap(file)
+        .then((bitmap) => {
+          drawToJpeg(bitmap, bitmap.width, bitmap.height);
+          if (typeof bitmap.close === 'function') bitmap.close();
+        })
+        .catch(() => loadViaObjectUrl());
+    } else {
+      loadViaObjectUrl();
+    }
   });
 }
